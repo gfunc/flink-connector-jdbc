@@ -156,6 +156,9 @@ public class JdbcUtils {
                     case java.sql.Types.LONGVARBINARY:
                         upload.setBytes(index + 1, (byte[]) field);
                         break;
+                    case java.sql.Types.ARRAY:
+                        upload.setArray(index + 1, (java.sql.Array) field);
+                        break;
                     default:
                         upload.setObject(index + 1, field);
                         LOG.warn(
@@ -164,7 +167,7 @@ public class JdbcUtils {
                                 index + 1,
                                 field);
                         // case java.sql.Types.SQLXML
-                        // case java.sql.Types.ARRAY:
+
                         // case java.sql.Types.JAVA_OBJECT:
                         // case java.sql.Types.BLOB:
                         // case java.sql.Types.CLOB:

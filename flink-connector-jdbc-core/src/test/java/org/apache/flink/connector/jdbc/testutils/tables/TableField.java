@@ -49,6 +49,10 @@ public class TableField {
         return pkField;
     }
 
+    public DbType getDbType() {
+        return dbType;
+    }
+
     public String asString() {
         String fieldType =
                 (this.dbType != null) ? this.dbType.toString() : this.dataType.toString();
@@ -72,6 +76,18 @@ public class TableField {
         public DbType notNull() {
             this.nullable = false;
             return this;
+        }
+
+        public String getType() {
+            return type;
+        }
+
+        public Boolean getNullable() {
+            return nullable;
+        }
+
+        public void setNullable(Boolean nullable) {
+            this.nullable = nullable;
         }
 
         @Override

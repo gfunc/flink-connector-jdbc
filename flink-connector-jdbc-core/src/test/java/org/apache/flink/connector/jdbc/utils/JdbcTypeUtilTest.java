@@ -35,7 +35,7 @@ class JdbcTypeUtilTest {
     void testTypeConversions() {
         assertThat(logicalTypeToSqlType(LogicalTypeRoot.INTEGER)).isEqualTo(Types.INTEGER);
         testUnsupportedType(LogicalTypeRoot.RAW);
-        testUnsupportedType(LogicalTypeRoot.MAP);
+        testUnsupportedType(LogicalTypeRoot.STRUCTURED_TYPE);
     }
 
     private static void testUnsupportedType(LogicalTypeRoot logicalTypeRoot) {

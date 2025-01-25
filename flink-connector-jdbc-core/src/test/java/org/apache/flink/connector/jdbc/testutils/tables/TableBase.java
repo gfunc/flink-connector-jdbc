@@ -81,6 +81,10 @@ public abstract class TableBase<T> implements TableManaged {
         return getStreamFields().map(TableField::getDataType);
     }
 
+    protected TableField[] getFields() {
+        return this.fields;
+    }
+
     public String[] getTableFields() {
         return getStreamFieldNames().toArray(String[]::new);
     }
