@@ -56,7 +56,7 @@ A driver dependency is also required to connect to a specified database. Here ar
 | Db2        | `com.ibm.db2.jcc`          | `db2jcc`               | [Download](https://www.ibm.com/support/pages/download-db2-fix-packs-version-db2-linux-unix-and-windows)                           | 
 | Trino      | `io.trino`                 | `trino-jdbc`           | [Download](https://repo1.maven.org/maven2/io/trino/trino-jdbc/)                                                                   |
 | OceanBase  | `com.oceanbase`            | `oceanbase-client`     | [Download](https://repo1.maven.org/maven2/com/oceanbase/oceanbase-client/)                                                        |
-
+| ClickHouse | `com.clickhouse`           | `clickhouse-jdbc`      | [Download](https://repo1.maven.org/maven2/com/clickhouse/clickhouse-jdbc/)                                                        |
 
 JDBC connector and drivers are not part of Flink's binary distribution. See how to link with them for cluster execution [here]({{< ref "docs/dev/configuration/overview" >}}).
 
@@ -700,9 +700,37 @@ SELECT * FROM oceanbase_catalog.given_database.test_table2;
 SELECT * FROM given_database.test_table2;
 ```
 
+#### ClickHouse Metaspace Mapping
+
+The databases in a ClickHouse cluster are at the same mapping level as the databases under the catalog registered with ClickHouse Catalog. A ClickHouse cluster can have multiple databases, each database can have multiple tables.
+In Flink, when querying tables registered by ClickHouse catalog, users can use either `database.table_name` or just `table_name`. The default value is the default database specified when ClickHouse Catalog was created.
+
+Therefore, the metaspace mapping between Flink Catalog and ClickHouse Catalog is as following:
+
+| Flink Catalog Metaspace Structure    | ClickHouse Metaspace Structure |
+|:-------------------------------------|:------------------------------|
+| catalog name (defined in Flink only) | N/A                           |
+| database name                        | database name                 |
+| table name                           | table_name                    |
+
+The full path of  table in Flink should be ``"`<catalog>`.`<db>`.`<table>`"``.
+
+Here are some examples to access ClickHouse tables:
+
+```sql
+-- scan table 'test_table', the default database is 'mydb'.
+SELECT * FROM clickhouse_catalog.mydb.test_table;
+SELECT * FROM mydb.test_table;
+SELECT * FROM test_table;
+
+-- scan table 'test_table' with the given database.
+SELECT * FROM clickhouse_catalog.given_database.test_table2;
+SELECT * FROM given_database.test_table2;
+```
+
 Data Type Mapping
 ----------------
-Flink supports connect to several databases which uses dialect like MySQL, Oracle, PostgreSQL, CrateDB, Derby, SQL Server, Db2 and OceanBase. The Derby dialect usually used for testing purpose. The field data type mappings from relational databases data types to Flink SQL data types are listed in the following table, the mapping table can help define JDBC table in Flink easily.
+Flink supports connect to several databases which uses dialect like MySQL, Oracle, PostgreSQL, CrateDB, Derby, SQL Server, Db2, OceanBase and ClickHouse. The Derby dialect usually used for testing purpose. The field data type mappings from relational databases data types to Flink SQL data types are listed in the following table, the mapping table can help define JDBC table in Flink easily.
 
 <table class="table table-bordered">
     <thead>
@@ -716,6 +744,7 @@ Flink supports connect to several databases which uses dialect like MySQL, Oracl
         <th class="text-left"><a href="https://trino.io/docs/current/language/types.html">Trino type</a></th>
         <th class="text-left"><a href="https://en.oceanbase.com/docs/common-oceanbase-database-10000000001106898">OceanBase MySQL mode type</a></th>
         <th class="text-left"><a href="https://en.oceanbase.com/docs/common-oceanbase-database-10000000001107076">OceanBase Oracle mode type</a></th>
+        <th class="text-left"><a href="https://clickhouse.com/docs/en/sql-reference/data-types">ClickHouse type</a></th>
         <th class="text-left"><a href="{{< ref "docs/dev/table/types" >}}">Flink SQL type</a></th>
       </tr>
     </thead>
@@ -730,6 +759,7 @@ Flink supports connect to several databases which uses dialect like MySQL, Oracl
       <td><code>TINYINT</code></td>
       <td><code>TINYINT</code></td>
       <td></td>
+      <td><code>Int8</code></td>
       <td><code>TINYINT</code></td>
     </tr>
     <tr>
@@ -752,6 +782,10 @@ Flink supports connect to several databases which uses dialect like MySQL, Oracl
         <code>SMALLINT</code><br>
         <code>TINYINT UNSIGNED</code></td>
       <td></td>
+      <td>
+        <code>Uint8</code>
+        <code>Int16</code>
+      </td>
       <td><code>SMALLINT</code></td>
     </tr>
     <tr>
@@ -774,6 +808,10 @@ Flink supports connect to several databases which uses dialect like MySQL, Oracl
         <code>MEDIUMINT</code><br>
         <code>SMALLINT UNSIGNED</code></td>
       <td></td>
+      <td>
+        <code>Uint16</code>
+        <code>Int32</code>
+      </td>
       <td><code>INT</code></td>
     </tr>
     <tr>
@@ -794,6 +832,10 @@ Flink supports connect to several databases which uses dialect like MySQL, Oracl
         <code>BIGINT</code><br>
         <code>INT UNSIGNED</code></td>
       <td></td>
+      <td>
+        <code>UInt32</code>
+        <code>Int64</code>
+      </td>
       <td><code>BIGINT</code></td>
     </tr>
    <tr>
@@ -806,6 +848,14 @@ Flink supports connect to several databases which uses dialect like MySQL, Oracl
       <td></td>
       <td><code>BIGINT UNSIGNED</code></td>
       <td></td>
+      <td>
+        <code>UInt64</code>
+        <code>Int128</code>
+        <code>UInt128</code>
+        <code>Int256</code>
+        <code>UInt256</code>
+      </td>
+      <td>
       <td><code>DECIMAL(20, 0)</code></td>
     </tr>
     <tr>
@@ -824,6 +874,7 @@ Flink supports connect to several databases which uses dialect like MySQL, Oracl
       <td><code>FLOAT</code></td>
       <td>
         <code>BINARY_FLOAT</code></td>
+      <td><code>Float32</code></td>
       <td><code>FLOAT</code></td>
     </tr>
     <tr>
@@ -842,6 +893,7 @@ Flink supports connect to several databases which uses dialect like MySQL, Oracl
       <td><code>DOUBLE</code></td>
       <td><code>DOUBLE</code></td>
       <td><code>BINARY_DOUBLE</code></td>
+      <td><code>Float64</code></td>
       <td><code>DOUBLE</code></td>
     </tr>
     <tr>
@@ -870,6 +922,13 @@ Flink supports connect to several databases which uses dialect like MySQL, Oracl
       <td>
         <code>FLOAT(s)</code><br>
         <code>NUMBER(p, s)</code></td>
+      <td>
+        <code>Decimal(p, s)</code>
+        <code>Decimal32(p.s)</code>
+        <code>Decimal64(p.s)</code>
+        <code>Decimal128(p.s)</code>
+        <code>Decimal256(p.s)</code>
+      </td>
       <td><code>DECIMAL(p, s)</code></td>
     </tr>
     <tr>
@@ -886,6 +945,7 @@ Flink supports connect to several databases which uses dialect like MySQL, Oracl
         <code>BOOLEAN</code><br>
         <code>TINYINT(1)</code></td>
       <td></td>
+      <td><code>Bool</code></td>
       <td><code>BOOLEAN</code></td>
     </tr>
     <tr>
@@ -898,6 +958,7 @@ Flink supports connect to several databases which uses dialect like MySQL, Oracl
       <td><code>DATE</code></td>
       <td><code>DATE</code></td>
       <td><code>DATE</code></td>
+      <td><code>Date</code></td>
       <td><code>DATE</code></td>
     </tr>
     <tr>
@@ -910,6 +971,7 @@ Flink supports connect to several databases which uses dialect like MySQL, Oracl
       <td><code>TIME_WITHOUT_TIME_ZONE</code></td>
       <td><code>TIME [(p)]</code></td>
       <td><code>DATE</code></td>
+      <td></td>
       <td><code>TIME [(p)] [WITHOUT TIMEZONE]</code></td>
     </tr>
     <tr>
@@ -925,6 +987,12 @@ Flink supports connect to several databases which uses dialect like MySQL, Oracl
       <td><code>TIMESTAMP_WITHOUT_TIME_ZONE</code></td>
       <td><code>DATETIME [(p)]</code></td>
       <td><code>TIMESTAMP [(p)] [WITHOUT TIMEZONE]</code></td>
+      <td>
+        <code>DateTime(p)</code>
+        <code>DateTime32(p)</code>
+        <code>DateTime64(p)</code>
+        (Timezone parameter not supported)
+      </td>
       <td><code>TIMESTAMP [(p)] [WITHOUT TIMEZONE]</code></td>
     </tr>
     <tr>
@@ -973,6 +1041,17 @@ Flink supports connect to several databases which uses dialect like MySQL, Oracl
         <code>NCHAR(n)</code><br>
         <code>VARCHAR2(n)</code><br>
         <code>CLOB</code></td>
+      <td>
+        <code>Enum8</code>
+        <code>Enum16</code>
+        <code>IPv4</code>
+        <code>IPv6</code>
+        <code>FixedString</code>
+        <code>JSON</code>
+        <code>Object</code>
+        <code>String</code>
+        <code>UUID</code>
+      </td>
       <td><code>STRING</code></td>
     </tr>
     <tr>
@@ -998,6 +1077,7 @@ Flink supports connect to several databases which uses dialect like MySQL, Oracl
       <td>
         <code>RAW(s)</code><br>
         <code>BLOB</code></td>
+      <td></td>
       <td><code>BYTES</code></td>
     </tr>
     <tr>
@@ -1010,7 +1090,34 @@ Flink supports connect to several databases which uses dialect like MySQL, Oracl
       <td><code>ARRAY</code></td>
       <td></td>
       <td></td>
+      <td><code>Array</code></td>
       <td><code>ARRAY</code></td>
+    </tr>
+    <tr>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td> 
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td><code>Map</code></td>
+      <td><code>MAP</code></td>
+    </tr>
+    <tr>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td> 
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td><code>Tuple</code></td>
+      <td><code>ROW</code></td>
     </tr>
     </tbody>
 </table>

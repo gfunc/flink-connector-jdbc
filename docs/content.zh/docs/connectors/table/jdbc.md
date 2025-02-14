@@ -58,6 +58,7 @@ JDBC 连接器不是二进制发行版的一部分，请查阅[这里]({{< ref "
 | Db2        | `com.ibm.db2.jcc`          | `db2jcc`               | [下载](https://www.ibm.com/support/pages/download-db2-fix-packs-version-db2-linux-unix-and-windows)                           |
 | Trino      | `io.trino`                 | `trino-jdbc`           | [下载](https://repo1.maven.org/maven2/io/trino/trino-jdbc/)                                                                   |
 | OceanBase  | `com.oceanbase`            | `oceanbase-client`     | [下载](https://repo1.maven.org/maven2/com/oceanbase/oceanbase-client/)                                                        |
+| ClickHouse | `com.clickhouse`           | `clickhouse-jdbc`      | [下载](https://repo1.maven.org/maven2/com/clickhouse/clickhouse-jdbc/)           
 
 当前，JDBC 连接器和驱动不在 Flink 二进制发布包中，请参阅[这里]({{< ref "docs/dev/configuration/overview" >}})了解在集群上执行时如何连接它们。
 
@@ -704,12 +705,39 @@ SELECT * FROM test_table;
 SELECT * FROM oceanbase_catalog.given_database.test_table2;
 SELECT * FROM given_database.test_table2;
 ```
+#### ClickHouse 元空间映射
+
+ClickHouse 集群中的数据库与 ClickHouse Catalog 注册的 catalog 下的数据库处于同一个映射层级。一个 ClickHouse 集群可以拥有多个数据库，每个数据库可以包含多张表。
+在 Flink 中，当查询由 ClickHouse catalog 注册的表时，用户可以使用 `database.table_name` 或只使用 `table_name`，其中 `database` 是可选的，默认值为创建 ClickHouse Catalog 时指定的默认数据库。
+
+因此，Flink Catalog 和 ClickHouse catalog 之间的元空间映射如下：
+
+| Flink Catalog Metaspace Structure    | ClickHouse Metaspace Structure |
+|:-------------------------------------|:------------------------------|
+| catalog name (defined in Flink only) | N/A                           |
+| database name                        | database name                 |
+| table name                           | table_name                    |
+
+Flink 中的 ClickHouse 表的完整路径应该是 ``"`<catalog>`.`<db>`.`<table>`"``。
+
+这里提供了一些访问 ClickHouse 表的例子：
+
+```sql
+-- scan table 'test_table', the default database is 'mydb'.
+SELECT * FROM clickhouse_catalog.mydb.test_table;
+SELECT * FROM mydb.test_table;
+SELECT * FROM test_table;
+
+-- scan table 'test_table' with the given database.
+SELECT * FROM clickhouse_catalog.given_database.test_table2;
+SELECT * FROM given_database.test_table2;
+```
 
 <a name="data-type-mapping"></a>
 
 数据类型映射
 ----------------
-Flink 支持连接到多个使用方言（dialect）的数据库，如 MySQL、Oracle、PostgreSQL、CrateDB, Derby、Db2、 SQL Server、OceanBase 等。其中，Derby 通常是用于测试目的。下表列出了从关系数据库数据类型到 Flink SQL 数据类型的类型映射，映射表可以使得在 Flink 中定义 JDBC 表更加简单。
+Flink 支持连接到多个使用方言（dialect）的数据库，如 MySQL、Oracle、PostgreSQL、CrateDB, Derby、Db2、 SQL Server、OceanBase、ClickHouse 等。其中，Derby 通常是用于测试目的。下表列出了从关系数据库数据类型到 Flink SQL 数据类型的类型映射，映射表可以使得在 Flink 中定义 JDBC 表更加简单。
 
 <table class="table table-bordered">
     <thead>
@@ -723,6 +751,7 @@ Flink 支持连接到多个使用方言（dialect）的数据库，如 MySQL、O
         <th class="text-left"><a href="https://trino.io/docs/current/language/types.html">Trino type</a></th>
         <th class="text-left"><a href="https://www.oceanbase.com/docs/common-oceanbase-database-cn-1000000000222199">OceanBase MySQL mode type</a></th>
         <th class="text-left"><a href="https://www.oceanbase.com/docs/common-oceanbase-database-cn-1000000000222012">OceanBase Oracle mode type</a></th>
+        <th class="text-left"><a href="https://clickhouse.com/docs/en/sql-reference/data-types">ClickHouse type</a></th>
         <th class="text-left"><a href="{{< ref "docs/dev/table/types" >}}">Flink SQL type</a></th>
       </tr>
     </thead>
@@ -737,6 +766,7 @@ Flink 支持连接到多个使用方言（dialect）的数据库，如 MySQL、O
       <td><code>TINYINT</code></td>
       <td><code>TINYINT</code></td>
       <td></td>
+      <td><code>Int8</code></td>
       <td><code>TINYINT</code></td>
     </tr>
     <tr>
@@ -759,6 +789,10 @@ Flink 支持连接到多个使用方言（dialect）的数据库，如 MySQL、O
         <code>SMALLINT</code><br>
         <code>TINYINT UNSIGNED</code></td>
       <td></td>
+      <td>
+        <code>Uint8</code>
+        <code>Int16</code>
+      </td>
       <td><code>SMALLINT</code></td>
     </tr>
     <tr>
@@ -781,6 +815,10 @@ Flink 支持连接到多个使用方言（dialect）的数据库，如 MySQL、O
         <code>MEDIUMINT</code><br>
         <code>SMALLINT UNSIGNED</code></td>
       <td></td>
+      <td>
+        <code>Uint16</code>
+        <code>Int32</code>
+      </td>
       <td><code>INT</code></td>
     </tr>
     <tr>
@@ -801,6 +839,10 @@ Flink 支持连接到多个使用方言（dialect）的数据库，如 MySQL、O
         <code>BIGINT</code><br>
         <code>INT UNSIGNED</code></td>
       <td></td>
+      <td>
+        <code>UInt32</code>
+        <code>Int64</code>
+      </td>
       <td><code>BIGINT</code></td>
     </tr>
    <tr>
@@ -813,6 +855,14 @@ Flink 支持连接到多个使用方言（dialect）的数据库，如 MySQL、O
       <td></td>
       <td><code>BIGINT UNSIGNED</code></td>
       <td></td>
+      <td>
+        <code>UInt64</code>
+        <code>Int128</code>
+        <code>UInt128</code>
+        <code>Int256</code>
+        <code>UInt256</code>
+      </td>
+      <td>
       <td><code>DECIMAL(20, 0)</code></td>
     </tr>
     <tr>
@@ -831,6 +881,7 @@ Flink 支持连接到多个使用方言（dialect）的数据库，如 MySQL、O
       <td><code>FLOAT</code></td>
       <td>
         <code>BINARY_FLOAT</code></td>
+      <td><code>Float32</code></td>
       <td><code>FLOAT</code></td>
     </tr>
     <tr>
@@ -849,6 +900,7 @@ Flink 支持连接到多个使用方言（dialect）的数据库，如 MySQL、O
       <td><code>DOUBLE</code></td>
       <td><code>DOUBLE</code></td>
       <td><code>BINARY_DOUBLE</code></td>
+      <td><code>Float64</code></td>
       <td><code>DOUBLE</code></td>
     </tr>
     <tr>
@@ -877,6 +929,13 @@ Flink 支持连接到多个使用方言（dialect）的数据库，如 MySQL、O
       <td>
         <code>FLOAT(s)</code><br>
         <code>NUMBER(p, s)</code></td>
+      <td>
+        <code>Decimal(p, s)</code>
+        <code>Decimal32(p.s)</code>
+        <code>Decimal64(p.s)</code>
+        <code>Decimal128(p.s)</code>
+        <code>Decimal256(p.s)</code>
+      </td>
       <td><code>DECIMAL(p, s)</code></td>
     </tr>
     <tr>
@@ -893,6 +952,7 @@ Flink 支持连接到多个使用方言（dialect）的数据库，如 MySQL、O
         <code>BOOLEAN</code><br>
         <code>TINYINT(1)</code></td>
       <td></td>
+      <td><code>Bool</code></td>
       <td><code>BOOLEAN</code></td>
     </tr>
     <tr>
@@ -905,6 +965,7 @@ Flink 支持连接到多个使用方言（dialect）的数据库，如 MySQL、O
       <td><code>DATE</code></td>
       <td><code>DATE</code></td>
       <td><code>DATE</code></td>
+      <td><code>Date</code></td>
       <td><code>DATE</code></td>
     </tr>
     <tr>
@@ -917,6 +978,7 @@ Flink 支持连接到多个使用方言（dialect）的数据库，如 MySQL、O
       <td><code>TIME_WITHOUT_TIME_ZONE</code></td>
       <td><code>TIME [(p)]</code></td>
       <td><code>DATE</code></td>
+      <td></td>
       <td><code>TIME [(p)] [WITHOUT TIMEZONE]</code></td>
     </tr>
     <tr>
@@ -932,6 +994,12 @@ Flink 支持连接到多个使用方言（dialect）的数据库，如 MySQL、O
       <td><code>TIMESTAMP_WITHOUT_TIME_ZONE</code></td>
       <td><code>DATETIME [(p)]</code></td>
       <td><code>TIMESTAMP [(p)] [WITHOUT TIMEZONE]</code></td>
+      <td>
+        <code>DateTime(p)</code>
+        <code>DateTime32(p)</code>
+        <code>DateTime64(p)</code>
+        (Timezone parameter not supported)
+      </td>
       <td><code>TIMESTAMP [(p)] [WITHOUT TIMEZONE]</code></td>
     </tr>
     <tr>
@@ -980,6 +1048,17 @@ Flink 支持连接到多个使用方言（dialect）的数据库，如 MySQL、O
         <code>NCHAR(n)</code><br>
         <code>VARCHAR2(n)</code><br>
         <code>CLOB</code></td>
+      <td>
+        <code>Enum8</code>
+        <code>Enum16</code>
+        <code>IPv4</code>
+        <code>IPv6</code>
+        <code>FixedString</code>
+        <code>JSON</code>
+        <code>Object</code>
+        <code>String</code>
+        <code>UUID</code>
+      </td>
       <td><code>STRING</code></td>
     </tr>
     <tr>
@@ -1005,6 +1084,7 @@ Flink 支持连接到多个使用方言（dialect）的数据库，如 MySQL、O
       <td>
         <code>RAW(s)</code><br>
         <code>BLOB</code></td>
+      <td></td>
       <td><code>BYTES</code></td>
     </tr>
     <tr>
@@ -1017,7 +1097,34 @@ Flink 支持连接到多个使用方言（dialect）的数据库，如 MySQL、O
       <td><code>ARRAY</code></td>
       <td></td>
       <td></td>
+      <td><code>Array</code></td>
       <td><code>ARRAY</code></td>
+    </tr>
+    <tr>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td> 
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td><code>Map</code></td>
+      <td><code>MAP</code></td>
+    </tr>
+    <tr>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td> 
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td><code>Tuple</code></td>
+      <td><code>ROW</code></td>
     </tr>
     </tbody>
 </table>

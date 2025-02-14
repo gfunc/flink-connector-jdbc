@@ -53,7 +53,7 @@ public class CrateDBDatabase extends DatabaseExtension implements CrateDBImages 
                     .withDatabaseName("crate")
                     .withUsername("crate")
                     .withPassword("crate")
-                    .withCommand("crate")
+                    .withCommand("crate -Cdiscovery.type=single-node")
                     .withEnv("TZ", "UTC") // For deterministic timestamp field results
                     .waitingFor(WAIT_STRATEGY);
 

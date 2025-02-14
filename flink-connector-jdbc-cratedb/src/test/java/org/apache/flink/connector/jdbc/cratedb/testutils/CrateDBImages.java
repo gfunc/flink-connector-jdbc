@@ -17,7 +17,7 @@
 
 package org.apache.flink.connector.jdbc.cratedb.testutils;
 
-/** Postgres docker images. */
+/** Crate docker images. */
 public interface CrateDBImages {
     String CRATEDB_5 = "crate:5.7.2";
 }
