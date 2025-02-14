@@ -94,6 +94,9 @@ public class ClickHouseCatalog extends AbstractJdbcCatalog {
 
         String driverVersion =
                 Preconditions.checkNotNull(getDriverVersion(), "Driver version must not be null.");
+        if (driverVersion.compareTo("0.8.0") > 0) {
+            throw new CatalogException("Driver version " + driverVersion + " is not supported.");
+        }
         String databaseVersion =
                 Preconditions.checkNotNull(
                         getDatabaseVersion(), "Database version must not be null.");

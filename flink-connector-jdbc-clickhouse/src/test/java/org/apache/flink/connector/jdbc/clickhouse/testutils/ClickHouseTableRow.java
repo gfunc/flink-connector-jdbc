@@ -26,6 +26,8 @@ import org.apache.flink.table.api.DataTypes;
 import org.apache.flink.table.types.DataType;
 import org.apache.flink.types.Row;
 
+import com.clickhouse.data.Tuple;
+
 import java.sql.Connection;
 import java.sql.Date;
 import java.sql.SQLException;
@@ -90,12 +92,15 @@ public class ClickHouseTableRow extends TableRow {
                             ps.setTimestamp(
                                     i + 1, Timestamp.valueOf(row.<LocalDateTime>getFieldAs(i)));
                         } else if (type.getConversionClass().equals(Row.class)) {
+
                             Row tuple = row.getFieldAs(i);
                             List<Object> t = new ArrayList<>();
                             for (int j = 0; j < tuple.getArity(); j++) {
                                 t.add(tuple.getField(j));
                             }
-                            ps.setObject(i + 1, t);
+
+                            ps.setObject(i + 1, new Tuple(t.toArray()), java.sql.Types.STRUCT);
+                            //                            ps.setObject(i + 1, t.toArray());
                         } else {
                             ps.setObject(i + 1, row.getField(i));
                         }

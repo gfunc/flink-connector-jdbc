@@ -43,7 +43,8 @@ public class ClickHouseDatabase extends DatabaseExtension implements ClickHouseI
                     .withDatabaseName("test")
                     .withEnv("CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT", "1")
                     .withUrlParam("use_server_time_zone", "false")
-                    .withUrlParam("use_time_zone", TimeZone.getDefault().getID());
+                    .withUrlParam("use_time_zone", TimeZone.getDefault().getID())
+                    .withUrlParam("clickhouse.jdbc.v2", "true");
 
     private static ClickHouseMetadata metadata;
 

@@ -380,8 +380,8 @@ abstract class ClickHouseCatalogTestBase implements JdbcITCaseBase, DatabaseTest
                 Statement st = conn.createStatement()) {
             TABLE_ALL_TYPES.insertIntoTableValues(conn, TABLE_ALL_TYPES_ROWS);
 
-            st.execute(String.format("CREATE DATABASE `%s` ENGINE=Atomic", TEST_DB2));
-            st.execute(String.format("use `%s`", TEST_DB2));
+            st.execute(String.format("CREATE DATABASE \"%s\" ENGINE=Atomic", TEST_DB2));
+            st.execute(String.format("USE \"%s\"", TEST_DB2));
             st.execute(TABLE_PK2.getCreateQuery());
         } catch (SQLException e) {
             throw new RuntimeException(e);

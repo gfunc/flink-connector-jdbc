@@ -44,6 +44,8 @@ import java.lang.reflect.Array;
 import java.math.BigDecimal;
 import java.net.Inet4Address;
 import java.net.Inet6Address;
+import java.sql.Date;
+import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -94,7 +96,12 @@ public class ClickHouseDialectConverter extends AbstractDialectConverter {
                     return val;
                 };
             case DATE:
-                return val -> (int) (((LocalDate) val).toEpochDay());
+                return val ->
+                        val instanceof LocalDate
+                                ? (int) ((LocalDate) val).toEpochDay()
+                                : val instanceof Date
+                                        ? (int) ((Date) val).toLocalDate().toEpochDay()
+                                        : val;
             case BIGINT:
                 return val ->
                         val instanceof Long
@@ -103,7 +110,10 @@ public class ClickHouseDialectConverter extends AbstractDialectConverter {
                                         ? ((UnsignedInteger) val).longValue()
                                         : val;
             case FLOAT:
-                return val -> val instanceof Float ? ((Float) val).floatValue() : val;
+                return val ->
+                        val instanceof Float
+                                ? ((Float) val).floatValue()
+                                : val instanceof Double ? ((Double) val).floatValue() : val;
             case DECIMAL:
                 final int precision = ((DecimalType) type).getPrecision();
                 final int scale = ((DecimalType) type).getScale();
@@ -154,11 +164,27 @@ public class ClickHouseDialectConverter extends AbstractDialectConverter {
                     // check if val is map type
                     if (val instanceof Map) {
                         Map<Object, Object> objectMap = new LinkedHashMap<>();
-                        for (Object entry : ((Map) val).entrySet()) {
-                            objectMap.put(
-                                    keyConverter.deserialize(((Map.Entry) entry).getKey()),
-                                    valueConverter.deserialize(((Map.Entry) entry).getValue()));
-                        }
+                        ((Map) val)
+                                .entrySet().stream()
+                                        .forEach(
+                                                entry -> {
+                                                    try {
+                                                        Object key =
+                                                                keyConverter.deserialize(
+                                                                        ((Map.Entry) entry)
+                                                                                .getKey());
+                                                        Object value =
+                                                                valueConverter.deserialize(
+                                                                        ((Map.Entry) entry)
+                                                                                .getValue());
+                                                        objectMap.put(key, value);
+                                                    } catch (SQLException e) {
+                                                        throw new UnsupportedOperationException(
+                                                                String.format(
+                                                                        "Unsupported MAP type: %s, %s",
+                                                                        type.asSummaryString(), e));
+                                                    }
+                                                });
                         return new GenericMapData(objectMap);
                     }
                     return val;
@@ -173,13 +199,22 @@ public class ClickHouseDialectConverter extends AbstractDialectConverter {
                 return val -> {
                     if (val instanceof List) {
                         GenericRowData row = new GenericRowData(rowArity);
-                        for (int i = 0; i < rowArity; i++) {
-                            row.setField(
-                                    i,
-                                    deserializationConverters
-                                            .get(i)
-                                            .deserialize(((List) val).get(i)));
-                        }
+                        IntStream.range(0, rowArity)
+                                .forEach(
+                                        i -> {
+                                            try {
+                                                row.setField(
+                                                        i,
+                                                        deserializationConverters
+                                                                .get(i)
+                                                                .deserialize(((List) val).get(i)));
+                                            } catch (SQLException e) {
+                                                throw new UnsupportedOperationException(
+                                                        String.format(
+                                                                "Unsupported ROW type: %s, %s",
+                                                                type.asSummaryString(), e));
+                                            }
+                                        });
                         return row;
                     }
                     return val;
@@ -237,15 +272,6 @@ public class ClickHouseDialectConverter extends AbstractDialectConverter {
                         .boxed()
                         .map(i -> innerGetter.getElementOrNull(arrayData, i))
                         .toArray(Object[]::new);
-            case ROW:
-                RowData row = (RowData) data;
-                return IntStream.range(0, row.getArity())
-                        .boxed()
-                        .map(
-                                i ->
-                                        createFieldGetter(((RowType) type).getTypeAt(i), i)
-                                                .getFieldOrNull(row))
-                        .collect(Collectors.toList());
             case MAP:
                 MapData mapData = (MapData) data;
                 ArrayData.ElementGetter keyGetter =
@@ -262,6 +288,15 @@ public class ClickHouseDialectConverter extends AbstractDialectConverter {
                                     mapVal.put(key, value);
                                 });
                 return mapVal;
+            case ROW:
+                RowData row = (RowData) data;
+                return IntStream.range(0, row.getArity())
+                        .boxed()
+                        .map(
+                                i ->
+                                        createFieldGetter(((RowType) type).getTypeAt(i), i)
+                                                .getFieldOrNull(row))
+                        .collect(Collectors.toList());
             default:
                 return data;
         }
