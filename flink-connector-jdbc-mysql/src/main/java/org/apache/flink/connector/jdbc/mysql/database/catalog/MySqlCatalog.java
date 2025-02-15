@@ -22,9 +22,12 @@ import org.apache.flink.annotation.Internal;
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.connector.jdbc.core.database.catalog.AbstractJdbcCatalog;
 import org.apache.flink.connector.jdbc.core.database.catalog.JdbcCatalogTypeMapper;
+import org.apache.flink.table.api.Schema;
+import org.apache.flink.table.catalog.CatalogBaseTable;
 import org.apache.flink.table.catalog.ObjectPath;
 import org.apache.flink.table.catalog.exceptions.CatalogException;
 import org.apache.flink.table.catalog.exceptions.DatabaseNotExistException;
+import org.apache.flink.table.catalog.exceptions.TableAlreadyExistException;
 import org.apache.flink.table.types.DataType;
 import org.apache.flink.util.Preconditions;
 import org.apache.flink.util.TemporaryClassLoaderContext;
@@ -171,6 +174,15 @@ public class MySqlCatalog extends AbstractJdbcCatalog {
     protected DataType fromJDBCType(ObjectPath tablePath, ResultSetMetaData metadata, int colIndex)
             throws SQLException {
         return dialectTypeMapper.mapping(tablePath, metadata, colIndex);
+    }
+
+    @Override
+    public void createTable(ObjectPath tablePath, CatalogBaseTable table, boolean ignoreIfExists)
+            throws TableAlreadyExistException, DatabaseNotExistException, CatalogException {
+        // TODO: add support for primary key, unique key, index, partition key, etc.
+        Schema schema = table.getUnresolvedSchema();
+        schema.getColumns();
+        throw new UnsupportedOperationException();
     }
 
     @Override

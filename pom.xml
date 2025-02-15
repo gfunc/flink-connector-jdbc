@@ -44,6 +44,7 @@ under the License.
 
     <modules>
         <module>flink-connector-jdbc</module>
+        <module>flink-connector-jdbc-shaded</module>
         <module>flink-connector-jdbc-architecture</module>
         <module>flink-connector-jdbc-core</module>
         <module>flink-connector-jdbc-cratedb</module>
