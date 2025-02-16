@@ -24,11 +24,18 @@ import org.apache.flink.connector.jdbc.core.database.catalog.AbstractJdbcCatalog
 import org.apache.flink.connector.jdbc.core.database.catalog.JdbcCatalogTypeMapper;
 import org.apache.flink.table.api.Schema;
 import org.apache.flink.table.catalog.CatalogBaseTable;
+import org.apache.flink.table.catalog.CatalogDatabase;
+import org.apache.flink.table.catalog.Column;
 import org.apache.flink.table.catalog.ObjectPath;
+import org.apache.flink.table.catalog.ResolvedCatalogTable;
+import org.apache.flink.table.catalog.ResolvedSchema;
 import org.apache.flink.table.catalog.exceptions.CatalogException;
+import org.apache.flink.table.catalog.exceptions.DatabaseAlreadyExistException;
 import org.apache.flink.table.catalog.exceptions.DatabaseNotExistException;
 import org.apache.flink.table.catalog.exceptions.TableAlreadyExistException;
 import org.apache.flink.table.types.DataType;
+import org.apache.flink.table.types.logical.LogicalType;
+import org.apache.flink.table.types.logical.LogicalTypeRoot;
 import org.apache.flink.util.Preconditions;
 import org.apache.flink.util.TemporaryClassLoaderContext;
 
@@ -40,6 +47,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
+import java.sql.Types;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Properties;
@@ -48,6 +56,23 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.apache.flink.connector.jdbc.JdbcConnectionOptions.getBriefAuthProperties;
+import static org.apache.flink.table.types.logical.LogicalTypeRoot.ARRAY;
+import static org.apache.flink.table.types.logical.LogicalTypeRoot.BIGINT;
+import static org.apache.flink.table.types.logical.LogicalTypeRoot.BINARY;
+import static org.apache.flink.table.types.logical.LogicalTypeRoot.BOOLEAN;
+import static org.apache.flink.table.types.logical.LogicalTypeRoot.CHAR;
+import static org.apache.flink.table.types.logical.LogicalTypeRoot.DATE;
+import static org.apache.flink.table.types.logical.LogicalTypeRoot.DECIMAL;
+import static org.apache.flink.table.types.logical.LogicalTypeRoot.DOUBLE;
+import static org.apache.flink.table.types.logical.LogicalTypeRoot.FLOAT;
+import static org.apache.flink.table.types.logical.LogicalTypeRoot.INTEGER;
+import static org.apache.flink.table.types.logical.LogicalTypeRoot.SMALLINT;
+import static org.apache.flink.table.types.logical.LogicalTypeRoot.TIMESTAMP_WITHOUT_TIME_ZONE;
+import static org.apache.flink.table.types.logical.LogicalTypeRoot.TIMESTAMP_WITH_TIME_ZONE;
+import static org.apache.flink.table.types.logical.LogicalTypeRoot.TIME_WITHOUT_TIME_ZONE;
+import static org.apache.flink.table.types.logical.LogicalTypeRoot.TINYINT;
+import static org.apache.flink.table.types.logical.LogicalTypeRoot.VARBINARY;
+import static org.apache.flink.table.types.logical.LogicalTypeRoot.VARCHAR;
 
 /** Catalog for MySQL. */
 @Internal
@@ -177,11 +202,82 @@ public class MySqlCatalog extends AbstractJdbcCatalog {
     }
 
     @Override
+    public void createDatabase(String name, CatalogDatabase database, boolean ignoreIfExists)
+            throws DatabaseAlreadyExistException, CatalogException {
+        if (databaseExists(name)){
+            if (!ignoreIfExists) {
+                throw new DatabaseAlreadyExistException(getName(), name);
+            }
+            return;
+        }
+        try (Connection conn =
+                     DriverManager.getConnection(defaultUrl, connectionProperties)) {
+            conn.createStatement().execute("CREATE SCHEMA " + name);
+        } catch (SQLException e) {
+            throw new CatalogException(
+                    String.format("Failed to create database %s", name), e);
+        }
+    }
+
+    @Override
     public void createTable(ObjectPath tablePath, CatalogBaseTable table, boolean ignoreIfExists)
             throws TableAlreadyExistException, DatabaseNotExistException, CatalogException {
         // TODO: add support for primary key, unique key, index, partition key, etc.
-        Schema schema = table.getUnresolvedSchema();
-        schema.getColumns();
+        if (!databaseExists(getSchemaName(tablePath))){
+            throw new DatabaseNotExistException(getName(), getSchemaName(tablePath));
+        }
+        if (tableExists(tablePath)){
+            if (!ignoreIfExists) {
+                throw new TableAlreadyExistException(getName(), tablePath);
+            }
+            return;
+        }
+        if (table instanceof ResolvedCatalogTable) {
+            ResolvedSchema schema =  ((ResolvedCatalogTable) table).getResolvedSchema();
+            StringBuilder sql = new StringBuilder(String.format("CREATE TABLE %s.%s (", getSchemaName(tablePath), getTableName(tablePath)));
+            for (Column column : schema.getColumns()) {
+                LogicalType dataType = column.getDataType().getLogicalType();
+                switch (dataType.getTypeRoot()) {
+                    case VARCHAR:
+//                        Types.VARCHAR);
+                    case CHAR:
+//                        Types.CHAR);
+                    case VARBINARY:
+//                        Types.VARBINARY);
+                    case BOOLEAN:
+//                        Types.BOOLEAN);
+                    case BINARY:
+//                        Types.BINARY);
+                    case TINYINT:
+//                        Types.TINYINT);
+                    case SMALLINT:
+//                        Types.SMALLINT);
+                    case INTEGER:
+//                        Types.INTEGER);
+                    case BIGINT:
+//                        Types.BIGINT);
+                    case FLOAT:
+//                        Types.REAL);
+                    case DOUBLE:
+//                        Types.DOUBLE);
+                    case DATE:
+//                        Types.DATE);
+                    case TIMESTAMP_WITHOUT_TIME_ZONE:
+//                        Types.TIMESTAMP);
+                    case TIMESTAMP_WITH_TIME_ZONE:
+//                        Types.TIMESTAMP_WITH_TIMEZONE);
+                    case TIME_WITHOUT_TIME_ZONE:
+//                        Types.TIME);
+                    case DECIMAL:
+//                        Types.DECIMAL);
+                    case ARRAY:
+//                        Types.ARRAY);
+                }
+            }
+        } else {
+            throw new UnsupportedOperationException();
+        }
+
         throw new UnsupportedOperationException();
     }
 

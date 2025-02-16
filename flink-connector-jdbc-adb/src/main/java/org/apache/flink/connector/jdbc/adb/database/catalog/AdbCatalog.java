@@ -51,6 +51,7 @@ import java.util.TreeSet;
 /** Catalog for ADB. */
 @Internal
 public class AdbCatalog extends MySqlCatalog {
+    private static final String hiddenPrimaryKey = "__adb_auto_id__";
     private static final Set<String> builtinDatabases =
             new HashSet<String>() {
                 {
@@ -159,6 +160,7 @@ public class AdbCatalog extends MySqlCatalog {
                 }
             }
 
+
             String stmt = String.format("SELECT * FROM %s;", getSchemaTableName(tablePath));
 
             Set<String> keys = new TreeSet<>();
@@ -166,10 +168,10 @@ public class AdbCatalog extends MySqlCatalog {
 
             // if hidden primary key
             if (primaryKey.isPresent()
-                    && primaryKey.get().getColumns().get(0).equals("__adb_auto_id__")) {
+                    && primaryKey.get().getColumns().get(0).equals(hiddenPrimaryKey)) {
                 stmt =
                         String.format(
-                                "SELECT __adb_auto_id__,* FROM %s;", getSchemaTableName(tablePath));
+                                "SELECT %s,* FROM %s;", hiddenPrimaryKey, getSchemaTableName(tablePath));
             }
 
             PreparedStatement ps = conn.prepareStatement(stmt);
