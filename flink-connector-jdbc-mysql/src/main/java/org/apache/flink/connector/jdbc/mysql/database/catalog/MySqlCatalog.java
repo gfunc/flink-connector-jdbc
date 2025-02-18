@@ -22,10 +22,12 @@ import org.apache.flink.annotation.Internal;
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.connector.jdbc.core.database.catalog.AbstractJdbcCatalog;
 import org.apache.flink.connector.jdbc.core.database.catalog.JdbcCatalogTypeMapper;
-import org.apache.flink.table.api.Schema;
 import org.apache.flink.table.catalog.CatalogBaseTable;
 import org.apache.flink.table.catalog.CatalogDatabase;
+import org.apache.flink.table.catalog.CatalogTable;
 import org.apache.flink.table.catalog.Column;
+import org.apache.flink.table.catalog.Constraint;
+import org.apache.flink.table.catalog.JdbcCatalogTable;
 import org.apache.flink.table.catalog.ObjectPath;
 import org.apache.flink.table.catalog.ResolvedCatalogTable;
 import org.apache.flink.table.catalog.ResolvedSchema;
@@ -35,7 +37,8 @@ import org.apache.flink.table.catalog.exceptions.DatabaseNotExistException;
 import org.apache.flink.table.catalog.exceptions.TableAlreadyExistException;
 import org.apache.flink.table.types.DataType;
 import org.apache.flink.table.types.logical.LogicalType;
-import org.apache.flink.table.types.logical.LogicalTypeRoot;
+import org.apache.flink.table.types.logical.VarCharType;
+import org.apache.flink.table.utils.EncodingUtils;
 import org.apache.flink.util.Preconditions;
 import org.apache.flink.util.TemporaryClassLoaderContext;
 
@@ -47,32 +50,18 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
-import java.sql.Types;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Properties;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import static org.apache.flink.connector.jdbc.JdbcConnectionOptions.getBriefAuthProperties;
-import static org.apache.flink.table.types.logical.LogicalTypeRoot.ARRAY;
-import static org.apache.flink.table.types.logical.LogicalTypeRoot.BIGINT;
-import static org.apache.flink.table.types.logical.LogicalTypeRoot.BINARY;
-import static org.apache.flink.table.types.logical.LogicalTypeRoot.BOOLEAN;
-import static org.apache.flink.table.types.logical.LogicalTypeRoot.CHAR;
-import static org.apache.flink.table.types.logical.LogicalTypeRoot.DATE;
-import static org.apache.flink.table.types.logical.LogicalTypeRoot.DECIMAL;
-import static org.apache.flink.table.types.logical.LogicalTypeRoot.DOUBLE;
-import static org.apache.flink.table.types.logical.LogicalTypeRoot.FLOAT;
-import static org.apache.flink.table.types.logical.LogicalTypeRoot.INTEGER;
-import static org.apache.flink.table.types.logical.LogicalTypeRoot.SMALLINT;
 import static org.apache.flink.table.types.logical.LogicalTypeRoot.TIMESTAMP_WITHOUT_TIME_ZONE;
 import static org.apache.flink.table.types.logical.LogicalTypeRoot.TIMESTAMP_WITH_TIME_ZONE;
 import static org.apache.flink.table.types.logical.LogicalTypeRoot.TIME_WITHOUT_TIME_ZONE;
-import static org.apache.flink.table.types.logical.LogicalTypeRoot.TINYINT;
-import static org.apache.flink.table.types.logical.LogicalTypeRoot.VARBINARY;
-import static org.apache.flink.table.types.logical.LogicalTypeRoot.VARCHAR;
 
 /** Catalog for MySQL. */
 @Internal
@@ -204,81 +193,173 @@ public class MySqlCatalog extends AbstractJdbcCatalog {
     @Override
     public void createDatabase(String name, CatalogDatabase database, boolean ignoreIfExists)
             throws DatabaseAlreadyExistException, CatalogException {
-        if (databaseExists(name)){
+        if (databaseExists(name)) {
             if (!ignoreIfExists) {
                 throw new DatabaseAlreadyExistException(getName(), name);
             }
             return;
         }
-        try (Connection conn =
-                     DriverManager.getConnection(defaultUrl, connectionProperties)) {
+        try (Connection conn = DriverManager.getConnection(defaultUrl, connectionProperties)) {
             conn.createStatement().execute("CREATE SCHEMA " + name);
         } catch (SQLException e) {
-            throw new CatalogException(
-                    String.format("Failed to create database %s", name), e);
+            throw new CatalogException(String.format("Failed to create database %s", name), e);
         }
     }
 
     @Override
     public void createTable(ObjectPath tablePath, CatalogBaseTable table, boolean ignoreIfExists)
             throws TableAlreadyExistException, DatabaseNotExistException, CatalogException {
-        // TODO: add support for primary key, unique key, index, partition key, etc.
-        if (!databaseExists(getSchemaName(tablePath))){
+
+        if (!databaseExists(getSchemaName(tablePath))) {
             throw new DatabaseNotExistException(getName(), getSchemaName(tablePath));
         }
-        if (tableExists(tablePath)){
+        if (tableExists(tablePath)) {
             if (!ignoreIfExists) {
                 throw new TableAlreadyExistException(getName(), tablePath);
             }
             return;
         }
+        String tableComment = table.getComment();
+        int varcharTotalLength = 0;
         if (table instanceof ResolvedCatalogTable) {
-            ResolvedSchema schema =  ((ResolvedCatalogTable) table).getResolvedSchema();
-            StringBuilder sql = new StringBuilder(String.format("CREATE TABLE %s.%s (", getSchemaName(tablePath), getTableName(tablePath)));
-            for (Column column : schema.getColumns()) {
+            ResolvedSchema schema = ((ResolvedCatalogTable) table).getResolvedSchema();
+            CatalogTable origin = ((ResolvedCatalogTable) table).getOrigin();
+            StringBuilder sql =
+                    new StringBuilder(
+                            String.format(
+                                    "CREATE TABLE %s.%s (\n",
+                                    EncodingUtils.escapeIdentifier(getSchemaName(tablePath)),
+                                    EncodingUtils.escapeIdentifier(getTableName(tablePath))));
+            for (int i = 0; i < schema.getColumnCount(); i++) {
+                Column column = schema.getColumn(i).isPresent() ? schema.getColumn(i).get() : null;
+                StringBuilder sb = new StringBuilder();
+                String columnType = column.getDataType().toString();
                 LogicalType dataType = column.getDataType().getLogicalType();
                 switch (dataType.getTypeRoot()) {
                     case VARCHAR:
-//                        Types.VARCHAR);
-                    case CHAR:
-//                        Types.CHAR);
-                    case VARBINARY:
-//                        Types.VARBINARY);
-                    case BOOLEAN:
-//                        Types.BOOLEAN);
+                        int lengthInByte = (((VarCharType) dataType).getLength() * 4);
+                        if (schema.getPrimaryKey().isPresent()
+                                && schema.getPrimaryKey()
+                                        .get()
+                                        .getColumns()
+                                        .contains(column.getName())) {
+                            varcharTotalLength += lengthInByte;
+                            break;
+                        }
+                        // to avoid row size too large error
+                        if (varcharTotalLength + lengthInByte > 50000) {
+                            columnType = "TEXT";
+                        } else {
+                            varcharTotalLength += lengthInByte;
+                        }
+                        break;
+                        //                    case CHAR:
                     case BINARY:
-//                        Types.BINARY);
-                    case TINYINT:
-//                        Types.TINYINT);
-                    case SMALLINT:
-//                        Types.SMALLINT);
-                    case INTEGER:
-//                        Types.INTEGER);
-                    case BIGINT:
-//                        Types.BIGINT);
-                    case FLOAT:
-//                        Types.REAL);
-                    case DOUBLE:
-//                        Types.DOUBLE);
-                    case DATE:
-//                        Types.DATE);
+                    case VARBINARY:
+                        columnType = "BLOB";
+                        break;
+                        //                    case BOOLEAN:
+                        //                    case TINYINT:
+                        //                    case SMALLINT:
+                        //                    case INTEGER:
+                        //                    case BIGINT:
+                        //                    case FLOAT:
+                        //                    case DOUBLE:
+                        //                    case DATE:
                     case TIMESTAMP_WITHOUT_TIME_ZONE:
-//                        Types.TIMESTAMP);
+                        //                        Types.TIMESTAMP);
                     case TIMESTAMP_WITH_TIME_ZONE:
-//                        Types.TIMESTAMP_WITH_TIMEZONE);
+                        //                        Types.TIMESTAMP_WITH_TIMEZONE);
                     case TIME_WITHOUT_TIME_ZONE:
-//                        Types.TIME);
-                    case DECIMAL:
-//                        Types.DECIMAL);
-                    case ARRAY:
-//                        Types.ARRAY);
+                        columnType = "DATETIME";
+                        break;
+                        //                    case DECIMAL:
+                        //                    case ARRAY:
+                        //                    default:
                 }
+                sb.append(EncodingUtils.escapeIdentifier(column.getName()));
+                sb.append(" ");
+                sb.append(columnType);
+                if (origin instanceof JdbcCatalogTable) {
+                    JdbcCatalogTable jdbcCatalogTable = (JdbcCatalogTable) origin;
+                    String sourceType = jdbcCatalogTable.getSourceType();
+                    if ("ADB".equalsIgnoreCase(sourceType)
+                            || "MYSQL".equalsIgnoreCase(sourceType)) {
+                        tableComment = jdbcCatalogTable.getComment();
+                        jdbcCatalogTable
+                                .getSourceDefault()
+                                .get(column.getName())
+                                .ifPresent(
+                                        t -> {
+                                            sb.append(" DEFAULT ");
+                                            if (t.equalsIgnoreCase("CURRENT_TIMESTAMP")) {
+                                                sb.append(t);
+                                            } else {
+                                                sb.append("'");
+                                                sb.append(t);
+                                                sb.append("'");
+                                            }
+                                        });
+                        jdbcCatalogTable
+                                .getSourceExtra()
+                                .get(column.getName())
+                                .ifPresent(t -> sb.append(" ").append(t.toUpperCase()));
+                    }
+                }
+                column.getComment()
+                        .ifPresent(
+                                c -> {
+                                    sb.append(" COMMENT '");
+                                    sb.append(EncodingUtils.escapeSingleQuotes(c));
+                                    sb.append("'");
+                                });
+                sql.append(sb);
+                if (i != schema.getColumnCount() - 1) {
+                    sql.append(", \n");
+                }
+            }
+            schema.getPrimaryKey()
+                    .ifPresent(
+                            t -> {
+                                sql.append(",\n");
+                                if (t.getType() == Constraint.ConstraintType.UNIQUE_KEY) {
+                                    sql.append("UNIQUE KEY ");
+                                    sql.append(EncodingUtils.escapeIdentifier(t.getName()));
+                                    sql.append(" ");
+                                } else {
+                                    sql.append("PRIMARY KEY ");
+                                }
+                                sql.append("(");
+                                sql.append(
+                                        t.getColumns().stream()
+                                                .map(EncodingUtils::escapeIdentifier)
+                                                .collect(Collectors.joining(", ")));
+                                sql.append(")\n");
+                            });
+
+            sql.append(")");
+            if (!tableComment.isEmpty()) {
+                sql.append(" COMMENT = '");
+                sql.append(EncodingUtils.escapeSingleQuotes(tableComment));
+                sql.append("'");
+            }
+            LOG.debug(
+                    "varchar total length for table {}: {}",
+                    getTableName(tablePath),
+                    varcharTotalLength);
+            try (Connection conn = DriverManager.getConnection(defaultUrl, connectionProperties)) {
+                conn.createStatement().execute(sql.toString());
+            } catch (SQLException e) {
+                LOG.debug("SQL {}", sql);
+                throw new CatalogException(
+                        String.format(
+                                "Failed to create table %s.%s",
+                                tablePath.getDatabaseName(), tablePath.getObjectName()),
+                        e);
             }
         } else {
             throw new UnsupportedOperationException();
         }
-
-        throw new UnsupportedOperationException();
     }
 
     @Override

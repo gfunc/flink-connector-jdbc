@@ -21,16 +21,21 @@ package org.apache.flink.connector.jdbc.adb.database.catalog;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.connector.jdbc.mysql.database.catalog.MySqlCatalog;
+import org.apache.flink.table.api.DataTypes;
 import org.apache.flink.table.api.Schema;
 import org.apache.flink.table.catalog.CatalogBaseTable;
-import org.apache.flink.table.catalog.CatalogTable;
+import org.apache.flink.table.catalog.JdbcCatalogTable;
 import org.apache.flink.table.catalog.ObjectPath;
 import org.apache.flink.table.catalog.UniqueConstraint;
 import org.apache.flink.table.catalog.exceptions.CatalogException;
+import org.apache.flink.table.catalog.exceptions.DatabaseNotExistException;
 import org.apache.flink.table.catalog.exceptions.TableNotExistException;
 import org.apache.flink.table.types.DataType;
+import org.apache.flink.table.types.logical.LogicalTypeRoot;
+import org.apache.flink.util.Preconditions;
 
 import org.apache.commons.compress.utils.Lists;
+import org.apache.commons.lang3.StringUtils;
 
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
@@ -85,6 +90,38 @@ public class AdbCatalog extends MySqlCatalog {
     }
 
     @Override
+    public List<String> listTables(String databaseName)
+            throws DatabaseNotExistException, CatalogException {
+        Preconditions.checkState(
+                StringUtils.isNotBlank(databaseName), "Database name must not be blank.");
+        if (!databaseExists(databaseName)) {
+            throw new DatabaseNotExistException(getName(), databaseName);
+        }
+
+        return extractColumnValuesBySQL(
+                getDatabaseUrl(databaseName),
+                "SELECT TABLE_NAME FROM information_schema.`TABLES` WHERE TABLE_TYPE='BASE TABLE' AND TABLE_SCHEMA = ?",
+                1,
+                null,
+                databaseName);
+    }
+
+    @Override
+    public List<String> listViews(String databaseName)
+            throws DatabaseNotExistException, CatalogException {
+        if (!databaseExists(databaseName)) {
+            throw new DatabaseNotExistException(getName(), databaseName);
+        }
+
+        return extractColumnValuesBySQL(
+                getDatabaseUrl(databaseName),
+                "SELECT TABLE_NAME FROM information_schema.`VIEWS` WHERE TABLE_SCHEMA = ?",
+                1,
+                null,
+                databaseName);
+    }
+
+    @Override
     public List<String> listDatabases() throws CatalogException {
         return extractColumnValuesBySQL(
                 defaultUrl,
@@ -128,19 +165,44 @@ public class AdbCatalog extends MySqlCatalog {
                     tableComment = rs.getString(1);
                 }
             }
-            // get column comments
-            Map<String, String> columnComments = new HashMap<>();
+            // get column extra info
+            Map<String, Optional<String>> columnComments = new HashMap<>();
+            Map<String, Optional<String>> columnDefaults = new HashMap<>();
+            Map<String, Optional<String>> columnExtras = new HashMap<>();
+            Map<String, Optional<Integer>> columnVarcharLengthens = new HashMap<>();
             try (ResultSet rs =
                     st.executeQuery(
                             String.format(
-                                    "SELECT column_name, column_comment\n"
+                                    "SELECT column_name, column_comment, column_default, extra, character_maximum_length \n"
                                             + "FROM INFORMATION_SCHEMA.columns\n"
                                             + "WHERE table_schema = '%s'\n"
-                                            + "  AND table_name = '%s'\n"
-                                            + "  AND column_comment IS NOT NULL;",
+                                            + "  AND table_name = '%s';",
                                     getSchemaName(tablePath), getTableName(tablePath)))) {
                 while (rs.next()) {
-                    columnComments.put(rs.getString(1), rs.getString(2));
+                    columnComments.put(
+                            rs.getString(1),
+                            Optional.ofNullable(
+                                    rs.getString(2) != null && rs.getString(2).isEmpty()
+                                            ? null
+                                            : rs.getString(2)));
+                    String columnDefault = rs.getString(3);
+                    if (columnDefault != null) {
+                        if (columnDefault.matches(
+                                "^\\d{4}-\\d{2}-\\d{2}\\s\\d{2}:\\d{2}:\\d{2}.*$")) {
+                            columnDefault = "CURRENT_TIMESTAMP";
+                        }
+                    }
+                    columnDefaults.put(rs.getString(1), Optional.ofNullable(columnDefault));
+
+                    columnExtras.put(
+                            rs.getString(1),
+                            Optional.ofNullable(
+                                    rs.getString(4) != null && rs.getString(4).isEmpty()
+                                            ? null
+                                            : rs.getString(4)));
+                    columnVarcharLengthens.put(
+                            rs.getString(1),
+                            Optional.ofNullable(rs.getInt(5) == 0 ? null : rs.getInt(5)));
                 }
             }
             // get not null columns, metadata is_nullable is not implemented by ADB
@@ -160,8 +222,7 @@ public class AdbCatalog extends MySqlCatalog {
                 }
             }
 
-
-            String stmt = String.format("SELECT * FROM %s;", getSchemaTableName(tablePath));
+            String stmt = String.format("SELECT * FROM `%s`;", getSchemaTableName(tablePath));
 
             Set<String> keys = new TreeSet<>();
             primaryKey.ifPresent(t -> t.getColumns().forEach(keys::add));
@@ -171,7 +232,12 @@ public class AdbCatalog extends MySqlCatalog {
                     && primaryKey.get().getColumns().get(0).equals(hiddenPrimaryKey)) {
                 stmt =
                         String.format(
-                                "SELECT %s,* FROM %s;", hiddenPrimaryKey, getSchemaTableName(tablePath));
+                                "SELECT %s,* FROM `%s`;",
+                                hiddenPrimaryKey, getSchemaTableName(tablePath));
+                columnComments.put(hiddenPrimaryKey, Optional.empty());
+                columnDefaults.put(hiddenPrimaryKey, Optional.empty());
+                columnExtras.put(hiddenPrimaryKey, Optional.of("auto_increment"));
+                columnVarcharLengthens.put(hiddenPrimaryKey, Optional.empty());
             }
 
             PreparedStatement ps = conn.prepareStatement(stmt);
@@ -180,7 +246,20 @@ public class AdbCatalog extends MySqlCatalog {
             Schema.Builder schemaBuilder = Schema.newBuilder();
             for (int i = 1; i <= resultSetMetaData.getColumnCount(); i++) {
                 String columnName = resultSetMetaData.getColumnName(i);
+                if (columnName == null) {
+                    continue;
+                }
                 DataType dataType = fromJDBCType(tablePath, resultSetMetaData, i);
+
+                if (primaryKey.isPresent()
+                        && !primaryKey.get().getColumns().contains(columnName)
+                        && dataType.getLogicalType().getTypeRoot() == LogicalTypeRoot.VARCHAR) {
+                    if (columnVarcharLengthens.get(columnName).isPresent()) {
+                        dataType = DataTypes.VARCHAR(columnVarcharLengthens.get(columnName).get());
+                    } else if (!columnDefaults.get(columnName).isPresent()) {
+                        dataType = DataTypes.BYTES();
+                    }
+                }
                 // skip nullable primary keys in adb
                 if (keys.contains(columnName)) {
                     dataType = dataType.notNull();
@@ -191,16 +270,22 @@ public class AdbCatalog extends MySqlCatalog {
                 if (notNulls.contains(columnName)) {
                     dataType = dataType.notNull();
                 }
-                schemaBuilder
-                        .column(columnName, dataType)
-                        .withComment(columnComments.get(columnName));
+                schemaBuilder.column(columnName, dataType);
+                columnComments.get(columnName).ifPresent(schemaBuilder::withComment);
             }
 
             primaryKey.ifPresent(
                     pk -> schemaBuilder.primaryKeyNamed(pk.getName(), pk.getColumns()));
             Schema tableSchema = schemaBuilder.build();
-            return CatalogTable.of(
-                    tableSchema, tableComment, Lists.newArrayList(), getOptions(tablePath));
+
+            return new JdbcCatalogTable(
+                    "ADB",
+                    tableSchema,
+                    tableComment,
+                    Lists.newArrayList(),
+                    getOptions(tablePath),
+                    columnDefaults,
+                    columnExtras);
         } catch (Exception e) {
             throw new CatalogException(
                     String.format("Failed getting table %s", tablePath.getFullName()), e);
