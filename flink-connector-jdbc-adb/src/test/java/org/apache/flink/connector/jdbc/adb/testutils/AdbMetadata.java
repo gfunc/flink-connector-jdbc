@@ -22,7 +22,6 @@ import org.apache.flink.connector.jdbc.testutils.DatabaseMetadata;
 
 import javax.sql.XADataSource;
 
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Properties;
@@ -34,20 +33,32 @@ public class AdbMetadata implements DatabaseMetadata {
     private final String url;
     private final String driver;
     private final String version;
+    private final boolean valid;
 
     public AdbMetadata() {
         Properties properties = new Properties();
         try (InputStream input =
                 getClass().getClassLoader().getResourceAsStream("test.properties")) {
             if (input == null) {
-                throw new FileNotFoundException("unable to find test.properties");
+                throw new IOException("test.properties not found in the classpath");
             }
             properties.load(input);
-            this.username = properties.getProperty("username");
-            this.password = properties.getProperty("password");
-            this.url = properties.getProperty("url");
-            this.driver = properties.getProperty("driver");
-            this.version = properties.getProperty("version");
+            this.username =
+                    properties.getProperty("username", "").isEmpty()
+                            ? null
+                            : properties.getProperty("username");
+            ;
+            this.password =
+                    properties.getProperty("password", "").isEmpty()
+                            ? null
+                            : properties.getProperty("password");
+            this.url =
+                    properties.getProperty("url", "").isEmpty()
+                            ? null
+                            : properties.getProperty("url");
+            this.driver = properties.getProperty("driver", "com.adb.jdbc.Driver");
+            this.version = properties.getProperty("version", "8.0.33");
+            this.valid = this.username != null && this.password != null && this.url != null;
         } catch (IOException ex) {
             throw new RuntimeException("Error reading properties file", ex);
         }
@@ -86,5 +97,9 @@ public class AdbMetadata implements DatabaseMetadata {
     @Override
     public String getVersion() {
         return this.version;
+    }
+
+    public boolean isValid() {
+        return this.valid;
     }
 }

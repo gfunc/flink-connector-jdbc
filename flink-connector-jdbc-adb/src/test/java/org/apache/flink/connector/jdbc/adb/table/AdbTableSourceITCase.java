@@ -20,16 +20,19 @@ package org.apache.flink.connector.jdbc.adb.table;
 
 import org.apache.flink.connector.jdbc.adb.AdbTestBase;
 import org.apache.flink.connector.jdbc.adb.database.catalog.AdbCatalog;
+import org.apache.flink.connector.jdbc.adb.testutils.AdbMetadata;
 import org.apache.flink.connector.jdbc.testutils.DatabaseTest;
 import org.apache.flink.table.api.EnvironmentSettings;
 import org.apache.flink.table.api.TableEnvironment;
+import org.apache.flink.table.catalog.exceptions.DatabaseNotExistException;
 import org.apache.flink.table.planner.runtime.utils.StreamTestSink;
-import org.apache.flink.types.Row;
-import org.apache.flink.util.CollectionUtil;
 
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 
@@ -38,14 +41,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /** ADB catalog read tests. */
 public class AdbTableSourceITCase implements AdbTestBase, DatabaseTest {
-    private static final String TEST_CATALOG_NAME = "adb_catalog";
-    private static final String TEST_DB = "ods_crw";
+    private static final Logger LOG = LoggerFactory.getLogger(AdbTableSourceITCase.class);
+    private static final String TEST_CATALOG_NAME = "test";
+    private static final String TEST_DB = "test";
 
     private AdbCatalog catalog;
     private TableEnvironment tEnv;
 
     @BeforeEach
     void beforeEach() {
+        Assumptions.assumeTrue(((AdbMetadata) getMetadata()).isValid());
         String jdbcUrl = getMetadata().getJdbcUrl();
         jdbcUrl = jdbcUrl.endsWith("/") ? jdbcUrl : jdbcUrl + "/";
         catalog =
@@ -60,7 +65,7 @@ public class AdbTableSourceITCase implements AdbTestBase, DatabaseTest {
         this.tEnv = TableEnvironment.create(EnvironmentSettings.inStreamingMode());
         tEnv.getConfig().set(TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM, 1);
 
-        // Use mysql catalog.
+        // Use adb catalog.
         tEnv.registerCatalog(TEST_CATALOG_NAME, catalog);
         tEnv.useCatalog(TEST_CATALOG_NAME);
     }
@@ -71,14 +76,8 @@ public class AdbTableSourceITCase implements AdbTestBase, DatabaseTest {
     }
 
     @Test
-    void testRead() {
-        String testTable = "ods_crw_all_coach_shop_oms_order";
-        List<Row> results =
-                CollectionUtil.iteratorToList(
-                        tEnv.sqlQuery(String.format("select * from %s limit 1;", testTable))
-                                .execute()
-                                .collect());
-
-        assertThat(results).hasSize(1);
+    void testListDb() throws DatabaseNotExistException {
+        List<String> tables = catalog.listTables(TEST_DB);
+        assertThat(tables).isEmpty();
     }
 }

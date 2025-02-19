@@ -67,16 +67,11 @@ public class JdbcCatalogTable extends DefaultCatalogTable {
     public Map<String, Optional<String>> getSourceExtra() {
         return sourceExtra;
     }
-    //    public void setSourceExtra(String columnName, @Nullable String sourceExtra) {
-    //        this.sourceExtra.put(columnName, sourceExtra==null?"":sourceExtra);
-    //
-    //    }
+
     public Map<String, Optional<String>> getSourceDefault() {
         return sourceDefault;
     }
-    //    public void setSourceDefault(String columnName, @Nullable String sourceDefault) {
-    //        this.sourceDefault.put(columnName, sourceDefault==null?"":sourceDefault);
-    //    }
+
     public String getSourceType() {
         return sourceType;
     }
