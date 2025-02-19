@@ -47,7 +47,6 @@ public class AdbMetadata implements DatabaseMetadata {
                     properties.getProperty("username", "").isEmpty()
                             ? null
                             : properties.getProperty("username");
-            ;
             this.password =
                     properties.getProperty("password", "").isEmpty()
                             ? null
