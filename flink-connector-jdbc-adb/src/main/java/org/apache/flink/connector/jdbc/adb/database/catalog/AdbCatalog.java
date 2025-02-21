@@ -257,7 +257,7 @@ public class AdbCatalog extends MySqlCatalog {
                     if (columnVarcharLengthens.get(columnName).isPresent()) {
                         dataType = DataTypes.VARCHAR(columnVarcharLengthens.get(columnName).get());
                     } else if (!columnDefaults.get(columnName).isPresent()) {
-                        dataType = DataTypes.BYTES();
+                        dataType = DataTypes.STRING();
                     }
                 }
                 // skip nullable primary keys in adb
