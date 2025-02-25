@@ -147,6 +147,7 @@ public class JdbcDynamicTableSource
         final List<String> predicates = new ArrayList<String>();
 
         if (readOptions.getPartitionColumnName().isPresent()) {
+            String partitionColumn = readOptions.getPartitionColumnName().get();
             long lowerBound = readOptions.getPartitionLowerBound().get();
             long upperBound = readOptions.getPartitionUpperBound().get();
             int numPartitions = readOptions.getNumPartitions().get();
@@ -159,10 +160,10 @@ public class JdbcDynamicTableSource
                             new JdbcGenericParameterValuesProvider(allPushdownParams));
 
             builder.setParametersProvider(allParams);
-
             predicates.add(
-                    dialect.quoteIdentifier(readOptions.getPartitionColumnName().get())
-                            + " BETWEEN ? AND ?");
+                    partitionColumn.contains("(") // escape if is a function
+                            ? partitionColumn + " BETWEEN ? AND ?"
+                            : dialect.quoteIdentifier(partitionColumn) + " BETWEEN ? AND ?");
         } else {
             builder.setParametersProvider(
                     new JdbcGenericParameterValuesProvider(replicatePushdownParamsForN(1)));
