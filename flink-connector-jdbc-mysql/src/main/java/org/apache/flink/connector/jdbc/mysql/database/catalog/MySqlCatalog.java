@@ -237,7 +237,13 @@ public class MySqlCatalog extends AbstractJdbcCatalog {
                 LogicalType dataType = column.getDataType().getLogicalType();
                 switch (dataType.getTypeRoot()) {
                     case VARCHAR:
-                        int lengthInByte = (((VarCharType) dataType).getLength() * 4);
+                        int length = ((VarCharType) dataType).getLength();
+                        if (columnType.equalsIgnoreCase("STRING")){
+                            columnType = "TEXT";
+                        }else{
+                            columnType = String.format("VARCHAR(%s)", length);
+                        }
+                        int lengthInByte = (length * 4);
                         if (schema.getPrimaryKey().isPresent()
                                 && schema.getPrimaryKey()
                                         .get()
