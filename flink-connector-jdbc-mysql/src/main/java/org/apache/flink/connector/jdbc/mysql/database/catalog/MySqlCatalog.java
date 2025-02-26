@@ -238,9 +238,9 @@ public class MySqlCatalog extends AbstractJdbcCatalog {
                 switch (dataType.getTypeRoot()) {
                     case VARCHAR:
                         int length = ((VarCharType) dataType).getLength();
-                        if (columnType.equalsIgnoreCase("STRING")){
+                        if (columnType.equalsIgnoreCase("STRING")) {
                             columnType = "TEXT";
-                        }else{
+                        } else {
                             columnType = String.format("VARCHAR(%s)", length);
                         }
                         int lengthInByte = (length * 4);
