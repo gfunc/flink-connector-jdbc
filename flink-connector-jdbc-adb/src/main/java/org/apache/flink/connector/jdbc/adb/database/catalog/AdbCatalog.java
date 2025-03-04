@@ -256,7 +256,7 @@ public class AdbCatalog extends MySqlCatalog {
                         && dataType.getLogicalType().getTypeRoot() == LogicalTypeRoot.VARCHAR) {
                     if (columnVarcharLengthens.get(columnName).isPresent()) {
                         dataType = DataTypes.VARCHAR(columnVarcharLengthens.get(columnName).get());
-                    } else if (!columnDefaults.get(columnName).isPresent()) {
+                    } else if (columnDefaults.get(columnName).isEmpty()) {
                         dataType = DataTypes.STRING();
                     }
                 }
@@ -271,7 +271,12 @@ public class AdbCatalog extends MySqlCatalog {
                     dataType = dataType.notNull();
                 }
                 schemaBuilder.column(columnName, dataType);
-                columnComments.get(columnName).ifPresent(schemaBuilder::withComment);
+                columnComments
+                        .get(columnName)
+                        .ifPresent(
+                                comment -> {
+                                    schemaBuilder.withComment(comment.replace("\"", "\\\""));
+                                });
             }
 
             primaryKey.ifPresent(

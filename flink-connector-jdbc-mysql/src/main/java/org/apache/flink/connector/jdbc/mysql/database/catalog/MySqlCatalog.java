@@ -35,6 +35,7 @@ import org.apache.flink.table.catalog.exceptions.CatalogException;
 import org.apache.flink.table.catalog.exceptions.DatabaseAlreadyExistException;
 import org.apache.flink.table.catalog.exceptions.DatabaseNotExistException;
 import org.apache.flink.table.catalog.exceptions.TableAlreadyExistException;
+import org.apache.flink.table.catalog.exceptions.TableNotExistException;
 import org.apache.flink.table.types.DataType;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.VarCharType;
@@ -59,9 +60,6 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static org.apache.flink.connector.jdbc.JdbcConnectionOptions.getBriefAuthProperties;
-import static org.apache.flink.table.types.logical.LogicalTypeRoot.TIMESTAMP_WITHOUT_TIME_ZONE;
-import static org.apache.flink.table.types.logical.LogicalTypeRoot.TIMESTAMP_WITH_TIME_ZONE;
-import static org.apache.flink.table.types.logical.LogicalTypeRoot.TIME_WITHOUT_TIME_ZONE;
 
 /** Catalog for MySQL. */
 @Internal
@@ -365,6 +363,35 @@ public class MySqlCatalog extends AbstractJdbcCatalog {
             }
         } else {
             throw new UnsupportedOperationException();
+        }
+    }
+
+    @Override
+    public void dropTable(ObjectPath tablePath, boolean ignoreIfNotExists)
+            throws TableNotExistException, CatalogException {
+        if (!tableExists(tablePath)) {
+            if (!ignoreIfNotExists) {
+                throw new TableNotExistException(getName(), tablePath);
+            }
+            return;
+        }
+        String sql =
+                ignoreIfNotExists
+                        ? String.format(
+                                "DROP TABLE IF EXISTS `%s`.`%s`",
+                                tablePath.getDatabaseName(), tablePath.getObjectName())
+                        : String.format(
+                                "DROP TABLE `%s`.`%s`",
+                                tablePath.getDatabaseName(), tablePath.getObjectName());
+        try (Connection conn = DriverManager.getConnection(defaultUrl, connectionProperties)) {
+            conn.createStatement().execute(sql);
+        } catch (SQLException e) {
+            LOG.debug("SQL {}", sql);
+            throw new CatalogException(
+                    String.format(
+                            "Failed to drop table %s.%s",
+                            tablePath.getDatabaseName(), tablePath.getObjectName()),
+                    e);
         }
     }
 
