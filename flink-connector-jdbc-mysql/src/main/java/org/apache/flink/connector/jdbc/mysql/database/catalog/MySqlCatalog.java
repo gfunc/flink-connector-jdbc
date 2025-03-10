@@ -153,7 +153,7 @@ public class MySqlCatalog extends AbstractJdbcCatalog {
                 .isEmpty();
     }
 
-    private String getDatabaseVersion() {
+    protected String getDatabaseVersion() {
         try (TemporaryClassLoaderContext ignored =
                 TemporaryClassLoaderContext.of(userClassLoader)) {
             try (Connection conn = DriverManager.getConnection(defaultUrl, connectionProperties)) {
@@ -165,7 +165,7 @@ public class MySqlCatalog extends AbstractJdbcCatalog {
         }
     }
 
-    private String getDriverVersion() {
+    protected String getDriverVersion() {
         try (TemporaryClassLoaderContext ignored =
                 TemporaryClassLoaderContext.of(userClassLoader)) {
             try (Connection conn = DriverManager.getConnection(defaultUrl, connectionProperties)) {

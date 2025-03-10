@@ -20,11 +20,37 @@ package org.apache.flink.connector.jdbc.adb.database.catalog;
 
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.connector.jdbc.mysql.database.catalog.MySqlTypeMapper;
+import org.apache.flink.table.api.DataTypes;
+import org.apache.flink.table.catalog.ObjectPath;
+import org.apache.flink.table.types.DataType;
+
+import java.sql.ResultSetMetaData;
+import java.sql.SQLException;
 
 /** AdbTypeMapper util class. */
 @Internal
 public class AdbTypeMapper extends MySqlTypeMapper {
+    private static final String MYSQL_DECIMAL = "DECIMAL";
+
     public AdbTypeMapper(String databaseVersion, String driverVersion) {
         super(databaseVersion, driverVersion);
+    }
+
+    @Override
+    public DataType mapping(ObjectPath tablePath, ResultSetMetaData metadata, int colIndex)
+            throws SQLException {
+        String mysqlType = metadata.getColumnTypeName(colIndex).toUpperCase();
+        int precision = metadata.getPrecision(colIndex);
+        int scale = metadata.getScale(colIndex);
+        switch (mysqlType) {
+            case MYSQL_DECIMAL:
+                if (precision >= 38) {
+                    // ADB supports DECIMAL(50, 26)
+                    return DataTypes.DECIMAL(38, scale);
+                }
+                return DataTypes.DECIMAL(precision, scale);
+            default:
+                return super.mapping(tablePath, metadata, colIndex);
+        }
     }
 }

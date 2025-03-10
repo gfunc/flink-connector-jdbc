@@ -20,6 +20,7 @@ package org.apache.flink.connector.jdbc.adb.database.catalog;
 
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.annotation.VisibleForTesting;
+import org.apache.flink.connector.jdbc.core.database.catalog.JdbcCatalogTypeMapper;
 import org.apache.flink.connector.jdbc.mysql.database.catalog.MySqlCatalog;
 import org.apache.flink.table.api.DataTypes;
 import org.apache.flink.table.api.Schema;
@@ -43,6 +44,7 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -52,6 +54,8 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
 import java.util.TreeSet;
+
+import static org.apache.flink.connector.jdbc.JdbcConnectionOptions.getBriefAuthProperties;
 
 /** Catalog for ADB. */
 @Internal
@@ -69,6 +73,8 @@ public class AdbCatalog extends MySqlCatalog {
                 }
             };
 
+    private final JdbcCatalogTypeMapper dialectTypeMapper;
+
     @VisibleForTesting
     public AdbCatalog(
             ClassLoader userClassLoader,
@@ -77,7 +83,12 @@ public class AdbCatalog extends MySqlCatalog {
             String username,
             String pwd,
             String baseUrl) {
-        super(userClassLoader, catalogName, defaultDatabase, username, pwd, baseUrl);
+        this(
+                userClassLoader,
+                catalogName,
+                defaultDatabase,
+                baseUrl,
+                getBriefAuthProperties(username, pwd));
     }
 
     public AdbCatalog(
@@ -87,6 +98,13 @@ public class AdbCatalog extends MySqlCatalog {
             String baseUrl,
             Properties connectionProperties) {
         super(userClassLoader, catalogName, defaultDatabase, baseUrl, connectionProperties);
+
+        String driverVersion =
+                Preconditions.checkNotNull(getDriverVersion(), "Driver version must not be null.");
+        String databaseVersion =
+                Preconditions.checkNotNull(
+                        getDatabaseVersion(), "Database version must not be null.");
+        this.dialectTypeMapper = new AdbTypeMapper(databaseVersion, driverVersion);
     }
 
     @Override
@@ -295,5 +313,11 @@ public class AdbCatalog extends MySqlCatalog {
             throw new CatalogException(
                     String.format("Failed getting table %s", tablePath.getFullName()), e);
         }
+    }
+
+    @Override
+    protected DataType fromJDBCType(ObjectPath tablePath, ResultSetMetaData metadata, int colIndex)
+            throws SQLException {
+        return dialectTypeMapper.mapping(tablePath, metadata, colIndex);
     }
 }
