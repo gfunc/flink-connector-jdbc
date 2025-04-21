@@ -20,12 +20,13 @@ package org.apache.flink.connector.jdbc.core.datastream.source;
 
 import org.apache.flink.api.common.JobID;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
-import org.apache.flink.api.common.restartstrategy.RestartStrategies;
+import org.apache.flink.api.common.functions.OpenContext;
 import org.apache.flink.api.common.state.ListState;
 import org.apache.flink.api.common.state.ListStateDescriptor;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.client.program.ClusterClient;
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.configuration.RestartStrategyOptions;
 import org.apache.flink.connector.base.DeliveryGuarantee;
 import org.apache.flink.connector.jdbc.core.datastream.source.config.ContinuousUnBoundingSettings;
 import org.apache.flink.connector.jdbc.core.datastream.source.reader.extractor.ResultExtractor;
@@ -34,13 +35,14 @@ import org.apache.flink.connector.jdbc.split.JdbcSlideTimingParameterProvider;
 import org.apache.flink.connector.jdbc.testutils.JdbcITCaseBase;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
-import org.apache.flink.streaming.api.functions.sink.SinkFunction;
+import org.apache.flink.streaming.api.functions.sink.legacy.SinkFunction;
 import org.apache.flink.test.junit5.InjectClusterClient;
 import org.apache.flink.util.Collector;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -60,6 +62,7 @@ import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
 import static org.apache.flink.runtime.jobgraph.tasks.CheckpointCoordinatorConfiguration.MINIMAL_CHECKPOINT_TIME;
@@ -131,6 +134,7 @@ class JdbcSourceStreamRelatedITCase implements DerbyTestBase, JdbcITCaseBase {
 
     @ParameterizedTest
     @EnumSource(DeliveryGuarantee.class)
+    @Timeout(value = 30000, unit = TimeUnit.MILLISECONDS)
     void testForNormalCaseWithoutFailure(
             DeliveryGuarantee guarantee, @InjectClusterClient ClusterClient<?> client)
             throws Exception {
@@ -149,6 +153,7 @@ class JdbcSourceStreamRelatedITCase implements DerbyTestBase, JdbcITCaseBase {
     }
 
     @Test
+    @Timeout(value = 30000, unit = TimeUnit.MILLISECONDS)
     void testExactlyOnceWithFailure(@InjectClusterClient ClusterClient<?> client) throws Exception {
         // Test continuous + unbounded splits
         StreamExecutionEnvironment env = getEnvWithRestartStrategyParallelism();
@@ -167,6 +172,7 @@ class JdbcSourceStreamRelatedITCase implements DerbyTestBase, JdbcITCaseBase {
     }
 
     @Test
+    @Timeout(value = 30000, unit = TimeUnit.MILLISECONDS)
     void testAtLeastOnceWithFailure(@InjectClusterClient ClusterClient<?> client) throws Exception {
         // Test continuous + unbounded splits
         StreamExecutionEnvironment env = getEnvWithRestartStrategyParallelism();
@@ -186,6 +192,7 @@ class JdbcSourceStreamRelatedITCase implements DerbyTestBase, JdbcITCaseBase {
     }
 
     @Test
+    @Timeout(value = 30000, unit = TimeUnit.MILLISECONDS)
     void testAtMostOnceWithFailure(@InjectClusterClient ClusterClient<?> client) throws Exception {
         // Test continuous + unbounded splits
         StreamExecutionEnvironment env = getEnvWithRestartStrategyParallelism();
@@ -282,8 +289,10 @@ class JdbcSourceStreamRelatedITCase implements DerbyTestBase, JdbcITCaseBase {
 
     @Nonnull
     private static StreamExecutionEnvironment getEnvWithRestartStrategyParallelism() {
-        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        env.setRestartStrategy(new RestartStrategies.FallbackRestartStrategyConfiguration());
+        Configuration configuration = new Configuration();
+        configuration.set(RestartStrategyOptions.RESTART_STRATEGY, "fixed-delay");
+        StreamExecutionEnvironment env =
+                StreamExecutionEnvironment.getExecutionEnvironment(configuration);
 
         env.setParallelism(TESTING_PARALLELISM);
         env.enableCheckpointing(MINIMAL_CHECKPOINT_TIME);
@@ -331,8 +340,8 @@ class JdbcSourceStreamRelatedITCase implements DerbyTestBase, JdbcITCaseBase {
         private boolean errorOccurred = false;
 
         @Override
-        public void open(Configuration parameters) throws Exception {
-            super.open(parameters);
+        public void open(OpenContext openContext) throws Exception {
+            super.open(openContext);
             listState =
                     getRuntimeContext()
                             .getListState(
@@ -346,11 +355,12 @@ class JdbcSourceStreamRelatedITCase implements DerbyTestBase, JdbcITCaseBase {
                 KeyedProcessFunction<Long, TestEntry, TestEntry>.Context ctx,
                 Collector<TestEntry> out)
                 throws Exception {
-            if (value.id == testEntries.size() / 2 && getRuntimeContext().getAttemptNumber() < 1) {
+            if (value.id == testEntries.size() / 2
+                    && getRuntimeContext().getTaskInfo().getAttemptNumber() < 1) {
                 throw new RuntimeException();
             }
             listState.add(value);
-            if (getRuntimeContext().getAttemptNumber() != 0) {
+            if (getRuntimeContext().getTaskInfo().getAttemptNumber() != 0) {
                 errorOccurred = true;
             }
             if (errorOccurred) {
